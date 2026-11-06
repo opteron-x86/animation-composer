@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>AnimationComposer</AssemblyName>
+    <Product>Animation Composer</Product>
+    <AssemblyTitle>Animation Composer</AssemblyTitle>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MovesetForge.Core/MovesetForge.Core.csproj" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.10" />
+    <PackageReference Include="Avalonia.Themes.Simple" Version="11.3.10" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
+    <PackageReference Include="Avalonia.Headless" Version="11.3.10" />
+  </ItemGroup>
+</Project>

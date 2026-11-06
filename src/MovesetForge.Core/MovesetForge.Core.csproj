@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="K4os.Compression.LZ4.Streams" Version="1.3.8"/><ProjectReference Include="../../vendor/HKX2Library/HKX2/HKX2.csproj"/><Compile Include="../../vendor/SageAnimation/*.cs" Link="Animation/%(Filename)%(Extension)"/></ItemGroup></Project>

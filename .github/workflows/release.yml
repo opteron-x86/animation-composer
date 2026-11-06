@@ -1,0 +1,108 @@
+name: Build and release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Each push needs its turn to choose and publish the next available patch.
+concurrency:
+  group: release-${{ github.ref }}
+  queue: max
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: 'true'
+
+jobs:
+  build:
+    name: Test, package and launch on Linux
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: '8.0.x'
+      - name: Select release version
+        id: version
+        run: |
+          version=$(python3 tools/release_version.py --next)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Run fixture tests
+        run: bash tools/check.sh
+      - name: Package both platforms and test the Linux archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash tools/publish.sh dist/packages "$VERSION"
+          cd dist/packages
+          sha256sum --check SHA256SUMS.txt
+          app="AnimationComposer-$VERSION-linux-x64"
+          tar -xzf "$app.tar.gz" -C "$RUNNER_TEMP"
+          timeout 60s "$RUNNER_TEMP/$app/AnimationComposer" --snapshot "$RUNNER_TEMP/linux.png"
+          test -s "$RUNNER_TEMP/linux.png"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-packages
+          path: dist/packages/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  windows:
+    name: Launch the Windows download
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-packages
+          path: packages
+      - name: Verify, extract and run the Windows app
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          $app = "AnimationComposer-$env:VERSION-win-x64"
+          $zip = "packages/$app.zip"
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ((Get-Content packages/SHA256SUMS.txt) -cnotcontains "$hash  $app.zip") {
+            throw "Windows archive checksum mismatch"
+          }
+          Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP
+          $image = Join-Path $env:RUNNER_TEMP "windows.png"
+          $process = Start-Process "$env:RUNNER_TEMP/$app/AnimationComposer.exe" -ArgumentList "--snapshot `"$image`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or !(Test-Path $image) -or (Get-Item $image).Length -eq 0) {
+            throw "The Windows app did not render its window (exit $($process.ExitCode))"
+          }
+
+  release:
+    name: Tag and publish verified downloads
+    needs: [build, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-packages
+          path: dist/packages
+      - name: Publish the release for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: bash tools/github-release.sh
